@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# Color codes for logs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No color
+
+log() {
+    case $1 in
+        info) echo -e "${CYAN}[INFO]${NC} $2" ;;
+        warn) echo -e "${YELLOW}[WARN]${NC} $2" ;;
+        error) echo -e "${RED}[ERROR]${NC} $2" ;;
+        success) echo -e "${GREEN}[SUCCESS]${NC} $2" ;;
+        *) echo "[LOG] $2" ;;
+    esac
+}
+
+# Function to process a single image
+process_image() {
+    input_file=$1
+    output_file=$2
+    quality=$3
+    resize=$4
+
+    # Randomize parameters for shaving and attenuate
+    shave_x=$((RANDOM % 15))
+    shave_y=$((RANDOM % 15))
+    attenuate=$(awk "BEGIN {printf \"%.2f\", 1 + ($RANDOM % 20) / 10}")
+
+    log info "Processing $input_file -> $output_file"
+    log info "Using quality=$quality, resize=${resize}%, shave=${shave_x}x${shave_y}, attenuate=$attenuate"
+
+    if magick convert "$input_file" -strip -quality "$quality" \
+        -shave "${shave_x}x${shave_y}" -resize "${resize}%" \
+        -attenuate "$attenuate" +noise Uniform "$output_file"; then
+        log success "Processed $input_file -> $output_file"
+        echo "$(date): Processed $input_file -> $output_file" >> image_processing.log
+    else
+        log error "Failed to process $input_file"
+        return 1
+    fi
+}
+
+# Main script
+main() {
+    quality=${1:-87}
+    resize=${2:-91}
+    log_file="image_processing.log"
+
+    # Backing up metadata option
+    backup_metadata() {
+        input_file=$1
+        metadata_file="${input_file%.*}_metadata.json"
+        if exiftool -json "$input_file" > "$metadata_file"; then
+            log info "Metadata backed up to $metadata_file"
+        else
+            log warn "Failed to back up metadata for $input_file"
+        fi
+    }
+
+    # Process each HEIC file in the current directory
+    for file in *.HEIC; do
+        if [[ -f "$file" ]]; then
+            output_file="${file%.*}.jpg"
+            backup_metadata "$file"
+            process_image "$file" "$output_file" "$quality" "$resize"
+        else
+            log warn "No HEIC files found in the current directory."
+            break
+        fi
+    done
+    log success "Batch processing completed."
+}
+
+# Entry point
+main "$@"
